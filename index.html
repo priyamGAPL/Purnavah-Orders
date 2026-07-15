@@ -88,6 +88,7 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .summary-footer{background:var(--parchment);padding:12px 18px;display:flex;justify-content:space-between;align-items:center}
 .summary-total-label{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--stone)}
 .summary-total-val{font-family:'EB Garamond',serif;font-size:24px;font-weight:600;color:var(--moss)}
+.summary-weight-note{font-size:11px;color:var(--stone);margin-top:3px}
 
 /* ── SHIPPING NOTE ── */
 .ship-note{background:var(--parchment);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;font-size:12.5px;color:var(--stone);line-height:1.6;margin-bottom:20px}
@@ -108,13 +109,6 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .product-price-block{text-align:right;min-width:70px}
 .mrp-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);font-family:'Hanken Grotesk',sans-serif;display:block;margin-bottom:1px}
 .product-subtotal{font-family:'EB Garamond',serif;font-size:13px;font-weight:600;color:var(--moss);white-space:nowrap;margin-top:2px}
-
-.copy-check{margin-bottom:14px}
-.copy-label{display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--stone);user-select:none}
-.copy-label input[type=checkbox]{position:absolute;opacity:0;width:0;height:0}
-.copy-check-box{width:18px;height:18px;border:1.5px solid var(--rule);border-radius:4px;background:var(--white);flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s}
-.copy-label input:checked + .copy-check-box{background:var(--moss);border-color:var(--moss)}
-.copy-label input:checked + .copy-check-box::after{content:'';display:block;width:5px;height:9px;border:2px solid #fff;border-top:none;border-left:none;transform:rotate(45deg) translateY(-1px)}
 
 .reset-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px 24px;background:transparent;color:var(--stone);border:1.5px solid var(--rule);border-radius:8px;font-family:'Hanken Grotesk',sans-serif;font-size:14px;font-weight:500;cursor:pointer;margin-top:10px;transition:border-color .15s,color .15s}
 .reset-btn:hover{border-color:var(--red);color:var(--red)}
@@ -168,6 +162,10 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
         <input type="tel" id="fphone" placeholder="10-digit mobile" autocomplete="tel" maxlength="10">
       </div>
       <div class="field">
+        <label>Email<span class="required-star">*</span></label>
+        <input type="email" id="femail" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="field">
         <label>Pincode<span class="required-star">*</span></label>
         <input type="text" id="fpincode" placeholder="6-digit pincode" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'')">
       </div>
@@ -175,18 +173,25 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
         <label>State<span class="required-star">*</span></label>
         <select id="fstate">
           <option value="">Select state</option>
+          <option>Andaman and Nicobar Islands</option>
           <option>Andhra Pradesh</option>
           <option>Arunachal Pradesh</option>
           <option>Assam</option>
           <option>Bihar</option>
+          <option>Chandigarh</option>
           <option>Chhattisgarh</option>
+          <option>Dadra and Nagar Haveli and Daman and Diu</option>
+          <option>Delhi</option>
           <option>Goa</option>
           <option>Gujarat</option>
           <option>Haryana</option>
           <option>Himachal Pradesh</option>
+          <option>Jammu and Kashmir</option>
           <option>Jharkhand</option>
           <option>Karnataka</option>
           <option>Kerala</option>
+          <option>Ladakh</option>
+          <option>Lakshadweep</option>
           <option>Madhya Pradesh</option>
           <option>Maharashtra</option>
           <option>Manipur</option>
@@ -194,6 +199,7 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
           <option>Mizoram</option>
           <option>Nagaland</option>
           <option>Odisha</option>
+          <option>Puducherry</option>
           <option>Punjab</option>
           <option>Rajasthan</option>
           <option>Sikkim</option>
@@ -203,14 +209,6 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
           <option>Uttar Pradesh</option>
           <option>Uttarakhand</option>
           <option>West Bengal</option>
-          <option>Andaman and Nicobar Islands</option>
-          <option>Chandigarh</option>
-          <option>Dadra and Nagar Haveli and Daman and Diu</option>
-          <option>Delhi</option>
-          <option>Jammu and Kashmir</option>
-          <option>Ladakh</option>
-          <option>Lakshadweep</option>
-          <option>Puducherry</option>
         </select>
       </div>
       <div class="field full">
@@ -238,21 +236,16 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
         <div class="summary-empty">No items selected yet</div>
       </div>
       <div class="summary-footer">
-        <div class="summary-total-label">Order total</div>
+        <div>
+          <div class="summary-total-label">Order total</div>
+          <div class="summary-weight-note" id="summaryWeight"></div>
+        </div>
         <div class="summary-total-val" id="summaryTotal">₹0</div>
       </div>
     </div>
 
     <div class="ship-note">
       <strong>Free delivery</strong> on all orders. Our team will confirm availability, share payment details, and dispatch within 1–2 business days after payment. Questions? Call or WhatsApp <strong>+91 83389 62474</strong>.
-    </div>
-
-    <div class="copy-check">
-      <label class="copy-label">
-        <input type="checkbox" id="sendCopy" checked>
-        <span class="copy-check-box"></span>
-        <span>Send me a copy of this order on WhatsApp</span>
-      </label>
     </div>
 
     <button class="wa-btn" id="waBtn" onclick="sendWhatsApp()">
@@ -411,23 +404,46 @@ function updateRow(id) {
   }
 }
 
+// Approximate weight from a product's Pack Size text ("500 g", "1 L", "2 kg",
+// "250 ml") — liquids (oils/ghee) are treated as ~1:1 with kg, same
+// approximation the Catalog Apps Script uses server-side. Lets the customer
+// gauge parcel weight without us tracking exact weights per SKU.
+function estimateWeightKg(packSize) {
+  const s = String(packSize || '').trim().toLowerCase();
+  const m = s.match(/([\d.]+)\s*(kg|g|l|ml)\b/);
+  if (!m) return 0;
+  const num = parseFloat(m[1]);
+  if (isNaN(num)) return 0;
+  switch (m[2]) {
+    case 'kg': return num;
+    case 'g':  return num / 1000;
+    case 'l':  return num;
+    case 'ml': return num / 1000;
+    default:   return 0;
+  }
+}
+
 function updateSummary() {
   const items = PRODUCTS.filter(p => qty[p[0]] > 0);
   const container = document.getElementById('summaryItems');
   const totalEl = document.getElementById('summaryTotal');
+  const weightEl = document.getElementById('summaryWeight');
 
   if (items.length === 0) {
     container.innerHTML = '<div class="summary-empty">No items selected yet</div>';
     totalEl.textContent = '₹0';
+    weightEl.textContent = '';
     return;
   }
 
   let total = 0;
+  let totalWeight = 0;
   let html = '';
   items.forEach(([id, , name, unit, price]) => {
     const q = qty[id];
     const subtotal = q * price;
     total += subtotal;
+    totalWeight += q * estimateWeightKg(unit);
     html += `<div class="summary-item">
       <span class="summary-item-name">${name} <span style="color:var(--stone);font-size:12px">${unit} × ${q}</span></span>
       <span class="summary-item-val">₹${subtotal.toLocaleString('en-IN')}</span>
@@ -436,11 +452,24 @@ function updateSummary() {
 
   container.innerHTML = html;
   totalEl.textContent = '₹' + total.toLocaleString('en-IN');
+  weightEl.textContent = totalWeight > 0 ? `Est. weight ≈ ${Math.round(totalWeight * 10) / 10} kg (±2 kg)` : '';
 }
 
+// Business's own WhatsApp number, without the country-code prefix — a
+// customer accidentally typing this as their own phone used to cause both
+// the business tab and the "send me a copy" tab to open the same chat
+// (Issue 4). Only one tab opens now (to the business), but the check stays
+// as a data-quality guard so an order isn't logged with the business's own
+// number as the customer's contact.
+const BUSINESS_PHONE = "8338962474";
+
 function sendWhatsApp() {
+  const waBtn = document.getElementById('waBtn');
+  if (waBtn.disabled) return; // ignore rapid repeat clicks while a submission is in flight (Issue 5/G)
+
   const name    = document.getElementById('fname').value.trim();
   const phone   = document.getElementById('fphone').value.trim();
+  const email   = document.getElementById('femail').value.trim();
   const pincode = document.getElementById('fpincode').value.trim();
   const state   = document.getElementById('fstate').value.trim();
   const address = document.getElementById('faddress').value.trim();
@@ -454,9 +483,17 @@ function sendWhatsApp() {
   if (items.length === 0)  { showError('Please select at least one product.'); return; }
   if (!name)               { showError('Please enter your name.'); document.getElementById('fname').focus(); return; }
   if (!/^\d{10}$/.test(phone)) { showError('Please enter a valid 10-digit phone number.'); document.getElementById('fphone').focus(); return; }
+  if (phone === BUSINESS_PHONE) { showError('That looks like our business number — please enter your own phone number.'); document.getElementById('fphone').focus(); return; }
+  if (!email)              { showError('Please enter your email address.'); document.getElementById('femail').focus(); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError('Please enter a valid email address.'); document.getElementById('femail').focus(); return; }
   if (!/^\d{6}$/.test(pincode)) { showError('Please enter a valid 6-digit pincode.'); document.getElementById('fpincode').focus(); return; }
   if (!state)              { showError('Please select your state.'); document.getElementById('fstate').focus(); return; }
   if (!address)            { showError('Please enter your delivery address.'); document.getElementById('faddress').focus(); return; }
+
+  // Lock the button for the duration of this submission so a double-click
+  // (or an impatient re-tap while the WA tab is opening) can't fire twice.
+  const originalLabel = waBtn.innerHTML;
+  waBtn.disabled = true;
 
   // Build message
   let total = 0;
@@ -476,7 +513,7 @@ ${orderLines}
 
 *DELIVERY DETAILS*
 Name: ${name}
-Phone: ${phone}
+Phone: ${phone}${email ? `\nEmail: ${email}` : ''}
 Pincode: ${pincode}
 State: ${state}
 Address: ${address}${notes ? `\nNotes: ${notes}` : ''}
@@ -484,18 +521,24 @@ Address: ${address}${notes ? `\nNotes: ${notes}` : ''}
 _Placed via purnavah.com order form_`;
 
   // ── GOOGLE SHEETS: silently log order ──────────────────
-  const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzNo-oJ3nwIwoFxfSi9_lL6cb_x44tzTYj1JYwZqRBW4UxA3iudJhdjDnPts7AVQycs/exec";
-  const SHEET_DEPLOYMENT_ID = "AKfycbzNo-oJ3nwIwoFxfSi9_lL6cb_x44tzTYj1JYwZqRBW4UxA3iudJhdjDnPts7AVQycs"
-  const library ="https://script.google.com/macros/library/d/1njBFy0nEiVYFaGY_NHGYKZXZsJMGB7ZgUvRAxDVI3TMv6k7vKi_1eHhD/2"
+  const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzp_lQrA04rHb_lnJGhOf44ucwV16PIyAo2PX64iHfC4Ua7dsFo544O_zZLqxhkTuwk/exec";
+
+  // A fresh id per submission attempt — a genuine retry (e.g. after a
+  // network error) gets a new one, but the server can still collapse two
+  // deliveries of the *same* click (double-fetch, browser retry, etc.)
+  // within its short dedup window (Issue 5).
+  const clientOrderId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(16).slice(2));
 
   const orderPayload = {
     name:    name,
     phone:   phone,
+    email:   email,
     pincode: pincode,
     state:   state,
     address: address,
     notes:   notes,
     total:   total,
+    clientOrderId: clientOrderId,
     items:   {}
   };
 
@@ -515,33 +558,15 @@ _Placed via purnavah.com order form_`;
     .catch(err => console.warn("Sheets webhook failed (non-blocking):", err));
   // ── END GOOGLE SHEETS ───────────────────────────────────
 
-  // Send to Purnavah
+  // Send to Purnavah — the only WhatsApp tab opened (Issue 4; there used to
+  // be a second tab to the customer's own number, gated by a "send me a
+  // copy" checkbox that's been removed).
   const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
   window.open(url, '_blank');
 
-  // Send copy to customer if checkbox is checked
-  const sendCopy = document.getElementById('sendCopy').checked;
-  if (sendCopy) {
-    const copyMsg = `🌿 *Your Purnavah Order — Confirmation*
-
-Hi ${name}, here's a copy of the order you just placed:
-
-*ORDER SUMMARY*
-${orderLines}
-*Total: ₹${total.toLocaleString('en-IN')}*
-
-*Delivery to:*
-${address}, ${pincode}
-
-We'll confirm availability and share payment details shortly.
-Questions? Reply here or call +91 83389 62474.
-
-_Thank you for choosing Purnavah_ 🙏`;
-    setTimeout(() => {
-      const copyUrl = `https://wa.me/91${phone}?text=${encodeURIComponent(copyMsg)}`;
-      window.open(copyUrl, '_blank');
-    }, 800);
-  }
+  // Re-enable after a short cooldown — long enough to absorb a double-tap,
+  // short enough that a genuine failed attempt isn't stuck unable to retry.
+  setTimeout(() => { waBtn.disabled = false; waBtn.innerHTML = originalLabel; }, 4000);
 }
 
 function resetForm() {
@@ -551,7 +576,7 @@ function resetForm() {
     if (input) input.value = 0;
     updateRow(id);
   });
-  ['fname','fphone','fpincode','fstate','faddress','fnotes'].forEach(id => {
+  ['fname','fphone','femail','fpincode','fstate','faddress','fnotes'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('errorMsg').style.display = 'none';

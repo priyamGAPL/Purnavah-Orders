@@ -313,15 +313,27 @@ async function loadProducts() {
   }
 }
 
+// Known category codes (Issue 3) — matches index.html's CATEGORY_LABELS
+// keys exactly, so an admin adding the first Spices product sees the right
+// preset instead of guessing/mistyping the code string index.html expects.
+const KNOWN_CATEGORIES = [
+  'Oils - Organic', 'Oils - Regular', 'Ghee', 'Flour', 'Dal', 'Rice',
+  'Spices - Whole', 'Spices - Ground'
+];
+
 function populateCategoryOptions() {
-  const cats = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+  const existingCats = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+
   const filterSel = document.getElementById('categoryFilter');
   const currentVal = filterSel.value;
   filterSel.innerHTML = '<option value="">All categories</option>' +
-    cats.map(c => `<option value="${escAttr(c)}">${escapeHtml(c)}</option>`).join('');
+    existingCats.map(c => `<option value="${escAttr(c)}">${escapeHtml(c)}</option>`).join('');
   filterSel.value = currentVal;
 
-  document.getElementById('categoryList').innerHTML = cats.map(c => `<option value="${escAttr(c)}">`).join('');
+  // The add/edit datalist also suggests the known presets even before any
+  // product uses them yet, on top of whatever categories already exist.
+  const suggestedCats = [...new Set([...KNOWN_CATEGORIES, ...existingCats])].sort();
+  document.getElementById('categoryList').innerHTML = suggestedCats.map(c => `<option value="${escAttr(c)}">`).join('');
 }
 
 function setFilter(f) {
@@ -372,6 +384,7 @@ function render() {
       <table class="catalog-table">
         <thead>
           <tr>
+            <th class="col-narrow">Product ID</th>
             <th class="col-name">Product Name</th>
             <th class="col-mid">Category</th>
             <th class="col-name">Display Name</th>
@@ -397,6 +410,7 @@ function renderRow(p) {
   const waKeyPreview = computeWaKey(ed.displayName, ed.packSize);
   return `
     <tr class="${ed.active !== 'Y' ? 'inactive-row' : ''}" id="row-${p.rowIndex}">
+      <td class="col-narrow" style="font-family:monospace;font-size:11px;color:var(--stone)" title="Auto-generated — not editable">${escapeHtml(p.productId || '—')}</td>
       <td class="col-name" title="Internal key — not editable to avoid breaking existing order history">${escapeHtml(p.productName)}</td>
       <td><input type="text" list="categoryList" value="${escAttr(ed.category)}" onchange="updateField(${p.rowIndex}, 'category', this.value)"></td>
       <td><input type="text" value="${escAttr(ed.displayName)}" onchange="updateField(${p.rowIndex}, 'displayName', this.value)"></td>
@@ -444,7 +458,11 @@ async function saveRow(rowIndex) {
   };
 
   try {
-    const res = await fetch(url, { method: 'POST', headers: {'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ key, action: 'update', rowIndex, fields }) });
+    // Identified by Product ID, not rowIndex — a row can shift position
+    // (another admin's add/delete) between page load and this save, and
+    // Product ID is the same stable identifier confirmOrder_/decrementStock_
+    // already rely on for stock updates.
+    const res = await fetch(url, { method: 'POST', headers: {'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ key, action: 'update', productId: p.productId, fields }) });
     const data = await res.json();
     if (data.status !== 'ok') throw new Error(data.message);
     Object.assign(p, ed);
@@ -463,11 +481,11 @@ async function deleteRow(rowIndex) {
 
   const url = apiUrl(), key = apiKey();
   try {
-    const res = await fetch(url, { method: 'POST', headers: {'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ key, action: 'delete', rowIndex }) });
+    const res = await fetch(url, { method: 'POST', headers: {'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ key, action: 'delete', productId: p.productId }) });
     const data = await res.json();
     if (data.status !== 'ok') throw new Error(data.message);
     toast('Deleted ' + p.productName);
-    await loadProducts(); // row indices shift after a delete — full reload keeps them correct
+    await loadProducts();
   } catch (err) {
     toast('Delete failed: ' + err.message, true);
   }

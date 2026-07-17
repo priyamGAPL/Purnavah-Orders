@@ -88,6 +88,7 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .order-flags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .flag{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:4px}
 .flag-dup{background:var(--amber-lt);color:var(--amber)}
+.flag-coupon{background:var(--moss-lt);color:var(--moss)}
 .order-right{display:flex;align-items:center;gap:18px}
 .order-total-block{text-align:right}
 .order-total{font-family:'Fraunces',serif;font-size:19px;font-weight:600;color:var(--moss)}
@@ -203,7 +204,7 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
   <div class="setup-bar" id="setupBar">
     <div style="flex:2;min-width:260px">
       <label>Apps Script Web App URL</label><br>
-      <input type="text" id="webhookUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycbzp_lQrA04rHb_lnJGhOf44ucwV16PIyAo2PX64iHfC4Ua7dsFo544O_zZLqxhkTuwk/exec">
+      <input type="text" id="webhookUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycbyneBskU4GMWgUhYg_BaYx2ltvELE7PV0It7CspZi969J1TDJgIBuQn6eBlSaUzrNgG/exec">
     </div>
     <div style="flex:1;min-width:180px">
       <label>Admin Key</label><br>
@@ -257,7 +258,7 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 // endpoint) so pricing for items that have since gone inactive/out-of-stock
 // still resolves correctly on old orders — the public endpoint would drop
 // them and break historical pricing.
-const CATALOG_API_URL = "https://script.google.com/macros/s/AKfycby4rJqrAivny6atrcgPSOaO9q9EKzs2O26JFfN-MiNFNACLd_BVFWZ1wEpnuxjF34yIeg/exec";
+const CATALOG_API_URL = "https://script.google.com/macros/s/AKfycbyLSm67HoP7wwI-gnfrMhGnwQGvKd9wvvHw5VfeRauhRmSWxDMLJmYJXePmX7Hj3uQjoQ/exec";
 
 let CATALOG = [];        // full catalog (admin list) — used for price lookups on any item ever ordered
 let CATALOG_ACTIVE = []; // Active=Y && Stock>0 subset — used for the "Add item" picker
@@ -376,6 +377,24 @@ function parseDate_(str) {
   return new Date(+y, +m - 1, +d);
 }
 
+// Parses the Orders sheet's "dd/MM/yyyy" or "dd/MM/yyyy HH:mm:ss" strings
+// (Timestamp/Last Updated) into a real Date for sort comparisons.
+function parseTimestamp_(str) {
+  if (!str) return null;
+  const m = String(str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}):(\d{2}))?$/);
+  if (!m) return null;
+  const [, d, mo, y, h, mi, s] = m;
+  return new Date(+y, +mo - 1, +d, +(h || 0), +(mi || 0), +(s || 0));
+}
+
+// Sort key for the order list (Issue: order by creation/update date desc) —
+// "Last Updated" is only stamped once an admin action touches the row, so a
+// never-touched order falls back to its creation Timestamp.
+function orderSortKey(o) {
+  const t = parseTimestamp_(o.lastUpdated) || parseTimestamp_(o.timestamp);
+  return t ? t.getTime() : 0;
+}
+
 function todayDDMMYYYY() {
   const d = new Date();
   const pad = n => String(n).padStart(2, '0');
@@ -410,7 +429,7 @@ function getStatusCfg(o) {
 }
 
 let orders = [];
-let currentFilter = 'all';
+let currentFilter = 'New';
 let expandedRow = null;
 let editState = {}; // rowIndex -> edit state (see getEdit)
 let showVersionHistory = false; // Issue 5/E — default view collapses to latest Version per Order Ref
@@ -462,6 +481,10 @@ async function loadOrders() {
         _stateDerived: !fromSheet
       };
     });
+    // Most-recently touched order first — falls back to creation Timestamp
+    // for a row "Last Updated" has never stamped (nothing admin-side has
+    // touched it since this column shipped).
+    orders.sort((a, b) => orderSortKey(b) - orderSortKey(a));
     flagDuplicates();
     editState = {};
 
@@ -530,13 +553,18 @@ function getEdit(o) {
     // Seed per-item discounts from what's actually persisted per line (Issue 1
     // Phase 1) — falls back to the order-level aggregate only for legacy rows
     // saved before Item Discounts JSON existed.
+    // A self-applied coupon (o.couponDiscountPct) is used as the default
+    // discount when nothing's been persisted yet — admin.html's Discount %
+    // field still overrides it same as any manual discount, this just means
+    // the customer's coupon doesn't need to be manually re-typed by hand.
+    const defaultPct = o.discountPct || o.couponDiscountPct || 0;
     const itemDiscounts = {};
     Object.keys(o.items).forEach(name => {
       const persisted = o.itemDiscounts ? o.itemDiscounts[name] : undefined;
-      itemDiscounts[name] = persisted !== undefined ? persisted : (o.discountPct || 0);
+      itemDiscounts[name] = persisted !== undefined ? persisted : defaultPct;
     });
     editState[o.rowIndex] = {
-      discountPct: o.discountPct || 0,
+      discountPct: defaultPct,
       items: { ...o.items },
       itemDiscounts,
       oos: new Set(),
@@ -643,6 +671,7 @@ function renderCard(o) {
           <div class="order-meta">${o.phone} · ${o.timestamp} · ${itemCount} item${itemCount !== 1 ? 's' : ''}${o.version > 1 ? ` · v${o.version}` : ''}</div>
           <div class="order-flags">
             ${o._dup ? '<span class="flag flag-dup">⚠ Possible duplicate</span>' : ''}
+            ${o.couponCode ? `<span class="flag flag-coupon">🏷 ${escapeHtml(o.couponCode)} (${o.couponDiscountPct}%)</span>` : ''}
             <span class="status-pill" style="background:${orderCfg.bg};color:${orderCfg.color}">${orderCfg.label}</span>
             ${payCfg ? `<span class="status-pill" style="background:${payCfg.bg};color:${payCfg.color}">${payCfg.label}</span>` : ''}
           </div>
@@ -708,6 +737,11 @@ function renderBody(o) {
 
   const totals = computeOrderTotals(o);
   const canUpdateOrder = status !== 'Revised' && !['Delivered','Cancelled'].includes(status);
+  // Generating a fresh invoice before the order is Confirmed would invoice
+  // items that haven't had stock decremented/GAPL ID assigned yet — once an
+  // invoice already exists, reprinting/refreshing it stays allowed regardless
+  // of status.
+  const canGenerateInvoice = !!o.invoiceNo || !['New','Cancelled'].includes(status);
 
   return `
     <div class="body-grid">
@@ -745,6 +779,7 @@ function renderBody(o) {
 
         <div class="panel-section">
           <div class="panel-label">Pricing</div>
+          ${o.couponCode ? `<div style="font-size:12.5px;color:var(--moss);margin-bottom:8px">🏷 Coupon <strong>${escapeHtml(o.couponCode)}</strong> applied by customer — ${o.couponDiscountPct}% off (pre-filled below, still editable)</div>` : ''}
           <div class="field-row">
             <label>Discount %</label>
             <input type="number" min="0" max="100"
@@ -758,6 +793,7 @@ function renderBody(o) {
             <div class="totals-row"><span>GST ${totals.isIntraState ? '(CGST+SGST)' : '(IGST)'}</span><span>₹${totals.totalGst.toLocaleString('en-IN')}</span></div>
             <div class="totals-row final"><span>Total payable</span><span>₹${totals.grandTotal.toLocaleString('en-IN')}</span></div>
           </div>
+          <div style="font-size:12px;color:var(--stone);margin-top:6px">${o.deliveryCharge > 0 ? `+ ₹${o.deliveryCharge} delivery charge collected from customer separately (not included in the GST invoice above)` : 'Free delivery — order was above the ₹1,490 threshold'}</div>
           ${o.orderTotal && Math.abs(totals.subtotal - o.orderTotal) > 1 && ed.oos.size === 0 && ed.deleted.size === 0 && totals.unknownItems.length === 0 ?
             `<div style="font-size:11px;color:var(--amber);margin-top:6px">⚠ Recalculated subtotal (₹${totals.subtotal}) differs from sheet's Order Total (₹${o.orderTotal}) — worth a quick check.</div>` : ''}
         </div>
@@ -767,7 +803,7 @@ function renderBody(o) {
 
         ${status === 'Revised' ? `<div class="locked-note">This is a superseded version — see the latest version for current actions.</div>` : `
         <div class="action-row">
-          <button class="btn btn-secondary btn-sm" onclick="generateInvoice(${o.rowIndex})">${o.invoiceNo ? 'View / reprint invoice' : 'Generate invoice'}</button>
+          <button class="btn btn-secondary btn-sm" onclick="generateInvoice(${o.rowIndex})" ${canGenerateInvoice ? '' : 'disabled title="Confirm the order before generating an invoice"'}>${o.invoiceNo ? 'View / reprint invoice' : 'Generate invoice'}</button>
         </div>`}
       </div>
     </div>
@@ -924,8 +960,8 @@ function renderAddItemForm(o) {
     <div class="add-item-form">
       <input type="text" list="catalogDL-${o.rowIndex}" id="addItemName-${o.rowIndex}" placeholder="Search product…">
       <datalist id="catalogDL-${o.rowIndex}">${options}</datalist>
-      <input type="number" id="addItemQty-${o.rowIndex}" value="1" min="1" title="Qty">
-      <input type="number" id="addItemDisc-${o.rowIndex}" value="${ed.discountPct || 0}" min="0" max="100" title="Disc %">
+      <input type="number" id="addItemQty-${o.rowIndex}" value="1" min="1" title="Qty" placeholder="Qty">
+      <input type="number" id="addItemDisc-${o.rowIndex}" value="${ed.discountPct || 0}" min="0" max="100" title="Disc %" placeholder="Disc %">
       <button class="btn btn-primary btn-sm" onclick="confirmAddItem(${o.rowIndex})">Add item</button>
       <button class="btn btn-secondary btn-sm" onclick="toggleAddItem(${o.rowIndex})">Cancel</button>
     </div>`;
@@ -1184,7 +1220,13 @@ async function doConfirmOrder(rowIndex) {
     } else if (negatives.length > 0) {
       toast(`Order confirmed ⚠ stock went negative for ${negatives.length} item(s) — check catalog`, true);
     } else if (errors.length > 0) {
-      toast(`Order confirmed ⚠ ${errors.length} item(s) had no matching catalog product — stock not updated for them. You can retry from the Status panel.`, true);
+      // Surface the real per-item/connection error instead of a generic
+      // "no matching catalog product" label — that wording used to show
+      // even when the actual cause was e.g. the request to the Catalog
+      // script failing outright (stale/misconfigured CATALOG_API_URL),
+      // which made this toast actively misleading for debugging.
+      const detail = errors.map(r => r.error).filter(Boolean).join('; ');
+      toast(`Order confirmed ⚠ stock not updated for ${errors.length} item(s): ${detail} — you can retry from the Status panel.`, true);
     } else if (missingIds.length > 0) {
       toast('Order confirmed — some items have no Product ID yet, stock not decremented for them', true);
     } else {

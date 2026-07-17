@@ -90,6 +90,19 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .summary-total-val{font-family:'EB Garamond',serif;font-size:24px;font-weight:600;color:var(--moss)}
 .summary-weight-note{font-size:11px;color:var(--stone);margin-top:3px}
 
+/* ── COUPON ── */
+.coupon-row{display:flex;gap:8px;margin-bottom:8px}
+.coupon-row input{flex:1;padding:10px 13px;border:1.5px solid var(--parchment);border-radius:6px;font-family:'Hanken Grotesk',sans-serif;font-size:14px;text-transform:uppercase;color:var(--ink);background:var(--white);outline:none;transition:border-color .15s}
+.coupon-row input:focus{border-color:var(--moss)}
+.coupon-row input::placeholder{color:#BDB5A6;text-transform:none}
+.coupon-row button{padding:10px 18px;background:var(--ink);color:var(--cream);border:none;border-radius:6px;font-family:'Hanken Grotesk',sans-serif;font-size:13px;font-weight:600;letter-spacing:.02em;cursor:pointer;transition:background .15s}
+.coupon-row button:hover{background:var(--moss)}
+.coupon-msg{display:none;font-size:12.5px;margin-bottom:16px}
+.coupon-msg.ok{display:block;color:var(--moss)}
+.coupon-msg.err{display:block;color:var(--red)}
+.coupon-msg a{color:inherit;text-decoration:underline;cursor:pointer;margin-left:6px}
+.summary-discount-val{color:var(--moss)}
+
 /* ── SHIPPING NOTE ── */
 .ship-note{background:var(--parchment);border:1px solid var(--rule);border-radius:6px;padding:12px 16px;font-size:12.5px;color:var(--stone);line-height:1.6;margin-bottom:20px}
 .ship-note strong{color:var(--ink)}
@@ -244,8 +257,14 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
       </div>
     </div>
 
+    <div class="coupon-row">
+      <input type="text" id="couponInput" placeholder="Have a coupon code?" maxlength="20">
+      <button type="button" id="couponBtn" onclick="applyCoupon()">Apply</button>
+    </div>
+    <div class="coupon-msg" id="couponMsg"></div>
+
     <div class="ship-note">
-      <strong>Free delivery</strong> on all orders. Our team will confirm availability, share payment details, and dispatch within 1–2 business days after payment. Questions? Call or WhatsApp <strong>+91 83389 62474</strong>.
+      <strong>Free delivery</strong> on orders above ₹1,490 — a ₹199 delivery charge applies below that. Our team will confirm availability, share payment details, and dispatch within 1–2 business days after payment. Questions? Call or WhatsApp <strong>+91 83389 62474</strong>.
     </div>
 
     <button class="wa-btn" id="waBtn" onclick="sendWhatsApp()">
@@ -273,12 +292,23 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 <script>
 const WA_NUMBER = "918338962474"; // +91 83389 62474
 
+// Delivery charge policy — free above the threshold, flat fee below it.
+// Checked against the raw item subtotal (before any coupon discount), so a
+// coupon can't accidentally push an order below the free-delivery line.
+const FREE_DELIVERY_THRESHOLD = 1490;
+const DELIVERY_CHARGE = 199;
+
+function computeDeliveryCharge(subtotal) {
+  return subtotal > 0 && subtotal < FREE_DELIVERY_THRESHOLD ? DELIVERY_CHARGE : 0;
+}
+
 // Live catalog — pulled from the Catalog Google Sheet on load (Active = Y
 // and Stock > 0 rows only; filtering happens server-side in the Apps Script).
-const CATALOG_API_URL = "https://script.google.com/macros/s/AKfycby4rJqrAivny6atrcgPSOaO9q9EKzs2O26JFfN-MiNFNACLd_BVFWZ1wEpnuxjF34yIeg/exec";
+const CATALOG_API_URL = "https://script.google.com/macros/s/AKfycbyLSm67HoP7wwI-gnfrMhGnwQGvKd9wvvHw5VfeRauhRmSWxDMLJmYJXePmX7Hj3uQjoQ/exec";
 
 let PRODUCTS = []; // [id, gridId, displayName, packSize, mrp, waKey, category]
 const qty = {};
+let appliedCoupon = null; // { code, value } — value is the discount %, validated server-side against the Coupons sheet
 
 // Sheet's Category column holds short internal codes — map to the
 // customer-facing section headings shown on the form. Anything not listed
@@ -450,9 +480,65 @@ function updateSummary() {
     </div>`;
   });
 
+  let payable = total;
+  if (appliedCoupon) {
+    const discAmt = Math.round(total * appliedCoupon.value) / 100;
+    payable = total - discAmt;
+    html += `<div class="summary-item">
+      <span class="summary-item-name summary-discount-val">Coupon ${appliedCoupon.code} (−${appliedCoupon.value}%)</span>
+      <span class="summary-item-val summary-discount-val">− ₹${discAmt.toLocaleString('en-IN')}</span>
+    </div>`;
+  }
+
+  const deliveryCharge = computeDeliveryCharge(total);
+  payable += deliveryCharge;
+  html += `<div class="summary-item">
+    <span class="summary-item-name">Delivery</span>
+    <span class="summary-item-val">${deliveryCharge > 0 ? '₹' + deliveryCharge.toLocaleString('en-IN') : 'Free'}</span>
+  </div>`;
+
   container.innerHTML = html;
-  totalEl.textContent = '₹' + total.toLocaleString('en-IN');
+  totalEl.textContent = '₹' + payable.toLocaleString('en-IN');
   weightEl.textContent = totalWeight > 0 ? `Est. weight ≈ ${Math.round(totalWeight * 10) / 10} kg (±2 kg)` : '';
+}
+
+async function applyCoupon() {
+  const input = document.getElementById('couponInput');
+  const msgEl = document.getElementById('couponMsg');
+  const code = input.value.trim().toUpperCase();
+
+  if (!code) { msgEl.textContent = 'Enter a coupon code first.'; msgEl.className = 'coupon-msg err'; return; }
+
+  msgEl.textContent = 'Checking…';
+  msgEl.className = 'coupon-msg ok';
+
+  try {
+    const res = await fetch(`${CATALOG_API_URL}?action=coupon&code=${encodeURIComponent(code)}`);
+    const data = await res.json();
+    if (data.status === 'ok' && data.valid) {
+      appliedCoupon = { code: data.code, value: Number(data.value) || 0 };
+      msgEl.innerHTML = `✓ "${data.code}" applied — ${appliedCoupon.value}% off <a onclick="removeCoupon()">Remove</a>`;
+      msgEl.className = 'coupon-msg ok';
+    } else {
+      appliedCoupon = null;
+      msgEl.textContent = data.message || 'Invalid coupon code';
+      msgEl.className = 'coupon-msg err';
+    }
+  } catch (err) {
+    appliedCoupon = null;
+    msgEl.textContent = "Couldn't verify the coupon — check your connection and try again.";
+    msgEl.className = 'coupon-msg err';
+  }
+  updateSummary();
+}
+
+function removeCoupon() {
+  appliedCoupon = null;
+  document.getElementById('couponInput').value = '';
+  const msgEl = document.getElementById('couponMsg');
+  msgEl.textContent = '';
+  msgEl.className = 'coupon-msg';
+  updateSummary();
 }
 
 // Business's own WhatsApp number, without the country-code prefix — a
@@ -505,23 +591,33 @@ function sendWhatsApp() {
     orderLines += `• ${name} (${unit}) × ${q} = ₹${sub.toLocaleString('en-IN')}\n`;
   });
 
+  let couponLine = '';
+  let payable = total;
+  if (appliedCoupon) {
+    const discAmt = Math.round(total * appliedCoupon.value) / 100;
+    payable = total - discAmt;
+    couponLine = `Coupon: ${appliedCoupon.code} (−${appliedCoupon.value}%) = −₹${discAmt.toLocaleString('en-IN')}\n`;
+  }
+
+  const deliveryCharge = computeDeliveryCharge(total);
+  payable += deliveryCharge;
+  const deliveryLine = `Delivery: ${deliveryCharge > 0 ? '₹' + deliveryCharge.toLocaleString('en-IN') : 'Free'}\n`;
+
   const msg = `🌿 *New Order — Purnavah*
 
 *ORDER DETAILS*
 ${orderLines}
-*Order Total: ₹${total.toLocaleString('en-IN')}*
+${couponLine}${deliveryLine}*Order Total: ₹${payable.toLocaleString('en-IN')}*
 
 *DELIVERY DETAILS*
 Name: ${name}
 Phone: ${phone}${email ? `\nEmail: ${email}` : ''}
 Pincode: ${pincode}
 State: ${state}
-Address: ${address}${notes ? `\nNotes: ${notes}` : ''}
-
-_Placed via purnavah.com order form_`;
+Address: ${address}${notes ? `\nNotes: ${notes}` : ''}`;
 
   // ── GOOGLE SHEETS: silently log order ──────────────────
-  const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzp_lQrA04rHb_lnJGhOf44ucwV16PIyAo2PX64iHfC4Ua7dsFo544O_zZLqxhkTuwk/exec";
+  const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyneBskU4GMWgUhYg_BaYx2ltvELE7PV0It7CspZi969J1TDJgIBuQn6eBlSaUzrNgG/exec";
 
   // A fresh id per submission attempt — a genuine retry (e.g. after a
   // network error) gets a new one, but the server can still collapse two
@@ -538,6 +634,9 @@ _Placed via purnavah.com order form_`;
     address: address,
     notes:   notes,
     total:   total,
+    couponCode:  appliedCoupon ? appliedCoupon.code : '',
+    couponValue: appliedCoupon ? appliedCoupon.value : 0,
+    deliveryCharge: deliveryCharge,
     clientOrderId: clientOrderId,
     items:   {}
   };
@@ -580,7 +679,7 @@ function resetForm() {
     document.getElementById(id).value = '';
   });
   document.getElementById('errorMsg').style.display = 'none';
-  updateSummary();
+  removeCoupon();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 

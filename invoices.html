@@ -116,11 +116,11 @@ table.invoice-table{width:100%;border-collapse:collapse;font-size:13px;min-width
   <div class="setup-bar" id="setupBar">
     <div style="flex:2;min-width:260px">
       <label>Orders Apps Script Web App URL</label><br>
-      <input type="text" id="ordersUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycbzp_lQrA04rHb_lnJGhOf44ucwV16PIyAo2PX64iHfC4Ua7dsFo544O_zZLqxhkTuwk/exec">
+      <input type="text" id="ordersUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycbyneBskU4GMWgUhYg_BaYx2ltvELE7PV0It7CspZi969J1TDJgIBuQn6eBlSaUzrNgG/exec">
     </div>
     <div style="flex:2;min-width:260px">
       <label>Catalog Apps Script Web App URL</label><br>
-      <input type="text" id="catalogUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycby4rJqrAivny6atrcgPSOaO9q9EKzs2O26JFfN-MiNFNACLd_BVFWZ1wEpnuxjF34yIeg/exec">
+      <input type="text" id="catalogUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" value="https://script.google.com/macros/s/AKfycbyLSm67HoP7wwI-gnfrMhGnwQGvKd9wvvHw5VfeRauhRmSWxDMLJmYJXePmX7Hj3uQjoQ/exec">
     </div>
     <div style="flex:1;min-width:180px">
       <label>Admin Key</label><br>
@@ -191,6 +191,12 @@ let currentPayFilter = 'all';
 let deepLinkInvoiceNo = null; // set from ?invoiceNo= when arriving from admin.html's "View in Invoices" button
 let cnModalRowIndex = null;   // order the credit-note-creation modal is currently open for
 let cnSelections = {};        // waKey -> qty being credited, for the open modal
+let cnMode = 'items';         // 'items' (return/credit specific line items) or 'manual' (post-sale adjustment)
+let cnManualAmount = 0;       // ₹, GST-inclusive — only used in 'manual' mode
+// Sentinel waKey for a manual/post-sale adjustment's synthetic line item —
+// never matches a real catalog product, so it can never collide with
+// creditedQtyForItem()'s "already credited" bookkeeping for actual items.
+const MANUAL_CN_WA_KEY = '__MANUAL_ADJUSTMENT__';
 let expandedInvoiceRow = null; // rowIndex whose inline detail panel is open (Issue 11 / Phase 6)
 
 function toggleInvoiceRow(rowIndex) {
@@ -503,6 +509,8 @@ function openCreditNoteModal(rowIndex) {
   if (!o.invoiceNo) { toast('This order has no invoice yet', true); return; }
   cnModalRowIndex = rowIndex;
   cnSelections = {};
+  cnMode = 'items';
+  cnManualAmount = 0;
   document.getElementById('modalTitle').textContent = 'Create Credit Note — ' + o.invoiceNo;
   document.getElementById('modalActions').innerHTML = `
     <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
@@ -511,38 +519,107 @@ function openCreditNoteModal(rowIndex) {
   document.getElementById('modalOverlay').style.display = 'flex';
 }
 
+// Scales a GST-inclusive manual/post-sale adjustment amount into taxable
+// value + CGST/SGST/IGST at this invoice's own blended GST rate (totalGst /
+// taxableValue) — the user's chosen treatment so the amount still reconciles
+// for GST reporting instead of the Excel export showing ₹0 tax on it.
+// Represented as a single synthetic line item (MANUAL_CN_WA_KEY) so it can
+// go through the exact same createCreditNote_ backend call as an item-based
+// credit note, with no schema change.
+function computeManualCreditPreview(o, amount) {
+  const tax = computeInvoiceTax(o);
+  const blendedRate = tax.taxableValue > 0 ? tax.totalGst / tax.taxableValue : 0;
+  const amt = Math.max(0, Number(amount) || 0);
+  if (amt <= 0) {
+    return { items: [], taxableValue: 0, cgst: 0, sgst: 0, igst: 0, totalGst: 0, totalAmount: 0, isIntra: tax.isIntra, blendedRate };
+  }
+  // amt = taxable * (1 + blendedRate) → solve for the GST component first so
+  // taxable + gst reconstructs to exactly amt (up to rounding).
+  const gstAmt = Math.round(amt * blendedRate / (1 + blendedRate) * 100) / 100;
+  const taxableValue = Math.round((amt - gstAmt) * 100) / 100;
+  const cgst = tax.isIntra ? Math.round(gstAmt / 2 * 100) / 100 : 0;
+  const sgst = cgst;
+  const igst = tax.isIntra ? 0 : gstAmt;
+  const totalAmount = Math.round((taxableValue + cgst + sgst + igst) * 100) / 100;
+  const item = { waKey: MANUAL_CN_WA_KEY, qty: 1, hsn: '', taxable: taxableValue, cgst, sgst, igst, gstAmt };
+  return { items: [item], taxableValue, cgst, sgst, igst, totalGst: gstAmt, totalAmount, isIntra: tax.isIntra, blendedRate };
+}
+
+// Single source of truth for "what would submitting right now create" —
+// used by both the live preview and submitCreditNote() so they can never
+// disagree.
+function getCurrentCnPreview(o) {
+  return cnMode === 'manual' ? computeManualCreditPreview(o, cnManualAmount) : computeCreditPreview(o, cnSelections);
+}
+
+function setCnMode(mode) {
+  cnMode = mode;
+  renderCreditNoteModal();
+}
+
+function updateCnManualAmount(val) {
+  cnManualAmount = Math.max(0, parseFloat(val) || 0);
+  renderCreditNoteModal();
+}
+
 function renderCreditNoteModal() {
   const o = orders.find(x => x.rowIndex === cnModalRowIndex);
   if (!o) return;
   const tax = computeInvoiceTax(o);
 
-  const rows = tax.lines.map(line => {
-    const already = creditedQtyForItem(o.invoiceNo, line.waKey);
-    const remaining = Math.max(0, line.qty - already);
-    const current = cnSelections[line.waKey] || 0;
-    return `<tr>
-      <td>${escapeHtml(line.waKey)}</td>
-      <td class="num">${line.qty}</td>
-      <td class="num">${already}</td>
-      <td class="num">${remaining}</td>
-      <td class="num"><input type="number" min="0" max="${remaining}" value="${current}" style="width:64px" ${remaining === 0 ? 'disabled' : ''}
-        onchange="updateCnQty('${escAttr(line.waKey)}', this.value, ${remaining})"></td>
-    </tr>`;
-  }).join('');
+  const modeToggle = `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn ${cnMode === 'items' ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setCnMode('items')">Return / credit items</button>
+      <button class="btn ${cnMode === 'manual' ? 'btn-primary' : 'btn-secondary'} btn-sm" onclick="setCnMode('manual')">Manual adjustment</button>
+    </div>`;
 
-  const preview = computeCreditPreview(o, cnSelections);
+  let modeBody;
+  if (cnMode === 'items') {
+    const rows = tax.lines.map(line => {
+      const already = creditedQtyForItem(o.invoiceNo, line.waKey);
+      const remaining = Math.max(0, line.qty - already);
+      const current = cnSelections[line.waKey] || 0;
+      return `<tr>
+        <td>${escapeHtml(line.waKey)}</td>
+        <td class="num">${line.qty}</td>
+        <td class="num">${already}</td>
+        <td class="num">${remaining}</td>
+        <td class="num"><input type="number" min="0" max="${remaining}" value="${current}" style="width:64px" ${remaining === 0 ? 'disabled' : ''}
+          onchange="updateCnQty('${escAttr(line.waKey)}', this.value, ${remaining})"></td>
+      </tr>`;
+    }).join('');
+    modeBody = `
+      <div class="table-wrap">
+        <table class="invoice-table" style="min-width:0">
+          <thead><tr><th>Item</th><th class="num">Invoiced</th><th class="num">Already credited</th><th class="num">Remaining</th><th class="num">Credit qty</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  } else {
+    const blendedPct = tax.taxableValue > 0 ? Math.round(tax.totalGst / tax.taxableValue * 10000) / 100 : 0;
+    const balanceDue = o.balanceDue || 0;
+    modeBody = `
+      <div>
+        <label class="field-mini-label">Adjustment amount (₹, GST-inclusive)</label>
+        <input type="number" id="cnManualAmount" class="date-input" style="width:100%" min="0" step="0.01"
+          value="${cnManualAmount || ''}" placeholder="e.g. 200" onchange="updateCnManualAmount(this.value)">
+        <div style="font-size:11.5px;color:var(--stone);margin-top:6px">
+          For goodwill refunds / post-sale adjustments not tied to a specific returned item — e.g. compensation for delayed delivery or a packaging issue.
+          Split into taxable value + GST at this invoice's blended rate (${blendedPct}%) so it still reconciles for tax reporting.
+          Current balance due on this order: ₹${balanceDue.toLocaleString('en-IN')}.
+        </div>
+      </div>`;
+  }
+
+  const preview = getCurrentCnPreview(o);
 
   document.getElementById('modalBody').innerHTML = `
     <div style="margin-bottom:10px;font-size:13px;color:var(--stone)">${escapeHtml(o.customerName || '')} · ${escapeHtml(o.invoiceDate || '')}</div>
-    <div class="table-wrap">
-      <table class="invoice-table" style="min-width:0">
-        <thead><tr><th>Item</th><th class="num">Invoiced</th><th class="num">Already credited</th><th class="num">Remaining</th><th class="num">Credit qty</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
+    ${modeToggle}
+    ${modeBody}
     <div style="margin-top:14px">
       <label class="field-mini-label">Reason</label>
-      <input type="text" id="cnReason" class="date-input" style="width:100%" placeholder="e.g. Damaged on arrival, returned 2 units">
+      <input type="text" id="cnReason" class="date-input" style="width:100%" placeholder="${cnMode === 'manual' ? 'e.g. Compensation for late delivery' : 'e.g. Damaged on arrival, returned 2 units'}">
     </div>
     <div style="margin-top:14px;background:#fff;border:1px solid var(--rule);border-radius:6px;padding:12px 14px;font-size:13px">
       <div class="totals-row"><span>Taxable Value</span><span>₹${preview.taxableValue.toLocaleString('en-IN')}</span></div>
@@ -563,9 +640,13 @@ function updateCnQty(waKey, val, max) {
 async function submitCreditNote() {
   const o = orders.find(x => x.rowIndex === cnModalRowIndex);
   if (!o) return;
-  const preview = computeCreditPreview(o, cnSelections);
-  if (preview.items.length === 0) { toast('Select at least one item to credit', true); return; }
+  const preview = getCurrentCnPreview(o);
+  if (preview.items.length === 0) {
+    toast(cnMode === 'manual' ? 'Enter an adjustment amount greater than ₹0' : 'Select at least one item to credit', true);
+    return;
+  }
   const reason = document.getElementById('cnReason').value.trim();
+  if (!reason) { toast('Enter a reason for this credit note', true); return; }
 
   try {
     const res = await fetch(ordersUrl(), {
@@ -628,10 +709,17 @@ function printCreditNote(cn, o, isIntra) {
   if (win) { win.document.open(); win.document.write(html); win.document.close(); }
 }
 
+// The manual-adjustment sentinel waKey is an internal identifier, not a
+// product name — show it as its intended human label everywhere a credit
+// note's line items are rendered.
+function cnItemLabel(waKey) {
+  return waKey === MANUAL_CN_WA_KEY ? 'Manual adjustment / goodwill refund' : waKey;
+}
+
 function buildCreditNoteHtml(cn, o, isIntra) {
   const rows = (cn.items || []).map(it => `
     <tr>
-      <td>${escapeHtml(it.waKey)}</td>
+      <td>${escapeHtml(cnItemLabel(it.waKey))}</td>
       <td class="num">${it.qty}</td>
       <td class="num">₹${it.taxable.toFixed(2)}</td>
       ${isIntra
@@ -751,7 +839,9 @@ function renderRow(o) {
   const payCfg = PAYMENT_STATES[payState] || PAYMENT_STATES.Unpaid;
   const itemCount = Object.keys(o.items || {}).length;
   const isDeepLinkTarget = deepLinkInvoiceNo && o.invoiceNo === deepLinkInvoiceNo;
-  const cnCount = creditNotesForInvoice(o.invoiceNo).length;
+  const cnNotes = creditNotesForInvoice(o.invoiceNo);
+  const cnCount = cnNotes.length;
+  const cnTotal = cnNotes.reduce((s, cn) => s + (cn.totalAmount || 0), 0);
   const isExpanded = expandedInvoiceRow === o.rowIndex;
 
   const summaryRow = `
@@ -765,7 +855,7 @@ function renderRow(o) {
       <td class="num">₹${(o.orderTotal || 0).toLocaleString('en-IN')}</td>
       <td class="num">₹${(o.discountAmount || 0).toLocaleString('en-IN')}</td>
       <td class="num">₹${(o.finalTotal || o.orderTotal || 0).toLocaleString('en-IN')}</td>
-      <td>${cnCount > 0 ? `<button class="cn-link" onclick="openCreditNoteList('${escAttr(o.invoiceNo)}')">${cnCount} note${cnCount !== 1 ? 's' : ''}</button>` : '<span style="color:var(--stone)">—</span>'}</td>
+      <td>${cnCount > 0 ? `<button class="cn-link" onclick="openCreditNoteList('${escAttr(o.invoiceNo)}')">${cnCount} note${cnCount !== 1 ? 's' : ''} (₹${cnTotal.toLocaleString('en-IN', {minimumFractionDigits:2})})</button>` : '<span style="color:var(--stone)">—</span>'}</td>
       <td style="display:flex;gap:6px">
         <button class="btn btn-secondary btn-sm" onclick="toggleInvoiceRow(${o.rowIndex})">${isExpanded ? '▴ Hide' : '▾ View'}</button>
         <button class="btn btn-secondary btn-sm" onclick="openCreditNoteModal(${o.rowIndex})">+ Credit Note</button>
@@ -839,10 +929,23 @@ function exportExcel() {
   const shown = getFilteredByChip();
   if (shown.length === 0) { toast('No invoices to export', true); return; }
 
+  // ISO for the filename — "/" isn't valid in filenames, so the dd/mm/yyyy
+  // display value can't be used directly here. Also used to filter which
+  // credit notes fall in range below.
+  const fromIso = ddmmyyyyToIso(document.getElementById('fromDate').value);
+  const toIso = ddmmyyyyToIso(document.getElementById('toDate').value);
+  const fromD = new Date(fromIso);
+  const toD = new Date(toIso);
+  toD.setHours(23, 59, 59, 999);
+
   const anyUnknown = [];
   const rows = shown.map(o => {
     const tax = computeInvoiceTax(o);
     if (tax.unknownItems.length) anyUnknown.push(o.invoiceNo + ': ' + tax.unknownItems.join(', '));
+    const cnNotes = creditNotesForInvoice(o.invoiceNo);
+    const cnAmount = cnNotes.reduce((s, cn) => s + (cn.totalAmount || 0), 0);
+    const cnTaxable = cnNotes.reduce((s, cn) => s + (cn.taxableValue || 0), 0);
+    const cnGst = cnNotes.reduce((s, cn) => s + (cn.totalGst || 0), 0);
     return {
       'Invoice No': o.invoiceNo || '',
       'Invoice Date': o.invoiceDate || '',
@@ -861,6 +964,10 @@ function exportExcel() {
       'SGST': tax.sgst,
       'IGST': tax.igst,
       'Total GST': tax.totalGst,
+      'Credit Notes Count': cnNotes.length,
+      'Credit Note Amount': Math.round(cnAmount * 100) / 100,
+      'Net Taxable Value (after CN)': Math.round((tax.taxableValue - cnTaxable) * 100) / 100,
+      'Net GST (after CN)': Math.round((tax.totalGst - cnGst) * 100) / 100,
       'Final Total': o.finalTotal || o.orderTotal || 0,
       'Payment Status': computePaymentState(o),
       'Amount Paid': o.amountPaid || 0,
@@ -868,20 +975,53 @@ function exportExcel() {
     };
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
+  // Credit notes in this date range, by the credit note's OWN date (not the
+  // original invoice's) — a credit note can be issued in a later period than
+  // the invoice it's against, and GST reporting groups it by when it was
+  // actually issued. Separate sheet, not just aggregated onto the invoice
+  // row above, so the CA can see each note's own taxable/GST breakdown and
+  // reason (Issue: credit notes were missing from the export entirely).
+  const cnRows = creditNotes
+    .filter(cn => {
+      const parts = (cn.creditNoteDate || '').split('/');
+      if (parts.length !== 3) return false;
+      const [d, m, y] = parts;
+      const cnDate = new Date(+y, +m - 1, +d);
+      return cnDate >= fromD && cnDate <= toD;
+    })
+    .map(cn => {
+      const o = orders.find(x => x.invoiceNo === cn.invoiceNo);
+      const isManual = (cn.items || []).length === 1 && cn.items[0].waKey === MANUAL_CN_WA_KEY;
+      return {
+        'Credit Note No': cn.creditNoteNo || '',
+        'Credit Note Date': cn.creditNoteDate || '',
+        'Against Invoice No': cn.invoiceNo || '',
+        'GAPL Order ID': (o && o.gaplOrderId) || '',
+        'Customer Name': cn.customerName || (o && o.customerName) || '',
+        'Type': isManual ? 'Manual Adjustment' : 'Item Return',
+        'Item(s)': isManual ? 'Manual adjustment / goodwill refund' : (cn.items || []).map(it => it.waKey + ' x' + it.qty).join(', '),
+        'Taxable Value': cn.taxableValue || 0,
+        'CGST': cn.cgst || 0,
+        'SGST': cn.sgst || 0,
+        'IGST': cn.igst || 0,
+        'Total GST': cn.totalGst || 0,
+        'Total Amount': cn.totalAmount || 0,
+        'Reason': cn.reason || ''
+      };
+    });
+
   const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
   XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
-  // ISO for the filename — "/" isn't valid in filenames, so the dd/mm/yyyy
-  // display value can't be used directly here.
-  const fromIso = ddmmyyyyToIso(document.getElementById('fromDate').value);
-  const toIso = ddmmyyyyToIso(document.getElementById('toDate').value);
+  const cnWs = XLSX.utils.json_to_sheet(cnRows.length ? cnRows : [{ 'Credit Note No': '(none in this date range)' }]);
+  XLSX.utils.book_append_sheet(wb, cnWs, 'Credit Notes');
   XLSX.writeFile(wb, `Purnavah_Invoices_${fromIso}_to_${toIso}.xlsx`);
 
   if (anyUnknown.length) {
     toast(`Exported, but ${anyUnknown.length} invoice(s) had items not found in the current catalog — GST for those items shows as ₹0. Check console for details.`, true);
     console.warn('Items not found in catalog:', anyUnknown);
   } else {
-    toast('Excel exported — ' + rows.length + ' invoice(s)');
+    toast(`Excel exported — ${rows.length} invoice(s), ${cnRows.length} credit note(s)`);
   }
 }
 

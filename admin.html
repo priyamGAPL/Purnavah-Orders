@@ -1415,6 +1415,8 @@ function sendConfirmWhatsApp(rowIndex) {
   let oosLine = oosItems.length ? `\n\n_Unavailable, removed from your order:_\n${oosItems.map(n => `• ${n}`).join('\n')}` : '';
   let discountLine = totals.discountAmt > 0 ? `\nDiscount applied: ${effectiveDiscPct(totals)}%` : '';
 
+  const upiLink = buildUpiPayLink(totals.grandTotal, `Order ${o.gaplOrderId || (o.orderRef || '').slice(0, 8)}`);
+
   const msg = `🌿 *Purnavah — Order Confirmation*
 
 Hi ${o.customerName}, here's your confirmed order (${preview.totalQty} item${preview.totalQty !== 1 ? 's' : ''}, approx. ${preview.estWeight} kg):
@@ -1423,9 +1425,12 @@ ${lines}${oosLine}
 ${discountLine}
 *Total payable: ₹${totals.grandTotal.toLocaleString('en-IN')}*
 
+💳 Pay via UPI: ${upiLink}
+(tap this link on your phone to open GPay/PhonePe/Paytm with the amount pre-filled)
+
 Delivery to: ${o.address}, ${o.pincode}
 
-We'll share payment details shortly. Thank you for choosing Purnavah! 🙏`;
+Thank you for choosing Purnavah! 🙏`;
 
   const phone = o.phone.length === 10 ? '91' + o.phone : o.phone;
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -1446,6 +1451,7 @@ function sendConfirmEmail(rowIndex) {
   let discountLine = totals.discountAmt > 0 ? `\nDiscount applied: ${effectiveDiscPct(totals)}%` : '';
 
   const subject = `Purnavah — Order Confirmation (${o.gaplOrderId || (o.orderRef || '').slice(0, 8)})`;
+  const upiLink = buildUpiPayLink(totals.grandTotal, `Order ${o.gaplOrderId || (o.orderRef || '').slice(0, 8)}`);
   const body = `Hi ${o.customerName},
 
 Here's your confirmed order (${preview.totalQty} item${preview.totalQty !== 1 ? 's' : ''}, approx. ${preview.estWeight} kg):
@@ -1454,9 +1460,12 @@ ${lines}${oosLine}
 ${discountLine}
 Total payable: Rs ${totals.grandTotal.toLocaleString('en-IN')}
 
+Pay via UPI: ${upiLink}
+(Tap the link above on your phone to open GPay/PhonePe/Paytm with the amount pre-filled.)
+
 Delivery to: ${o.address}, ${o.pincode}
 
-We'll share payment details shortly. Thank you for choosing Purnavah!`;
+Thank you for choosing Purnavah!`;
 
   window.open(`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
 }

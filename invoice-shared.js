@@ -13,6 +13,19 @@
 // Update to your live order-form URL — shown as a QR code on every invoice.
 const ORDER_FORM_URL = 'https://purnavah-orders.pages.dev';
 
+// UPI collection details — used to build the "pay via UPI" QR/link on
+// invoices and in the order-confirmation WhatsApp/email messages.
+const UPI_VPA = 'greenharvestagri@upi';
+const UPI_PAYEE_NAME = 'Greenharvest Agriculture Private Limited';
+
+// amount: number (rupees); note: short text shown as the UPI transaction note.
+function buildUpiPayLink(amount, note) {
+  const params = new URLSearchParams({
+    pa: UPI_VPA, pn: UPI_PAYEE_NAME, am: amount.toFixed(2), cu: 'INR', tn: note
+  });
+  return `upi://pay?${params.toString()}`;
+}
+
 function numberToWords(num) {
   const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
   const b = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
@@ -88,6 +101,19 @@ function buildInvoiceHtml(d) {
       Amount: ₹${(d.paymentReceived.amount || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}
     </div>` : '';
 
+  // Outstanding amount = this invoice's total minus whatever's already been
+  // recorded as paid — not just d.grandTotal, so a QR on a reprinted/
+  // partially-paid invoice doesn't ask the customer to pay the full amount again.
+  const amountPaid = d.customer.amountPaid || 0;
+  const payableAmount = Math.max(0, Math.round((d.grandTotal - amountPaid) * 100) / 100);
+  const upiLink = buildUpiPayLink(payableAmount, `Invoice ${d.invoiceNo}`);
+  const upiQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(upiLink)}`;
+  const upiSection = payableAmount > 0 ? `
+    <a href="${upiLink}" style="text-decoration:none;text-align:center;flex-shrink:0">
+      <img src="${upiQrUrl}" width="86" height="86" alt="Pay via UPI">
+      <div style="font-size:9.5px;color:#666;margin-top:2px">Scan / tap to pay via UPI</div>
+    </a>` : '';
+
   // goqr.me's free API — chart.googleapis.com's old QR endpoint was shut
   // down years ago and would render a broken image here.
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(ORDER_FORM_URL)}`;
@@ -140,11 +166,14 @@ th.num{text-align:right}
 <div class="top">
   <div>
     <h1>TAX INVOICE</h1>
-    <div class="meta">
-      Invoice # ${d.invoiceNo}<br>
-      Date: ${d.date} | Due: ${d.dueDate}<br><br>
-      <span class="balance-label">Balance Due</span><br>
-      <span class="balance-amt">₹${d.grandTotal.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+    <div style="display:flex;align-items:flex-end;gap:14px">
+      <div class="meta">
+        Invoice # ${d.invoiceNo}<br>
+        Date: ${d.date} | Due: ${d.dueDate}<br><br>
+        <span class="balance-label">Balance Due</span><br>
+        <span class="balance-amt">₹${payableAmount.toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+      </div>
+      ${upiSection}
     </div>
   </div>
   <div class="company">

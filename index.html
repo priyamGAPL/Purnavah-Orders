@@ -48,18 +48,18 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .category-label:first-of-type{margin-top:0}
 .catalog-status{font-size:12.5px;color:var(--stone);font-style:italic;margin-bottom:14px}
 .catalog-status-error{color:var(--red)}
-.product-grid{display:flex;flex-direction:column;gap:2px}
-.product-row{display:flex;align-items:center;background:var(--white);border:1px solid var(--parchment);border-radius:6px;padding:11px 14px;gap:14px;transition:border-color .15s,background .15s}
+.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.product-row{display:flex;flex-direction:column;background:var(--white);border:1px solid var(--parchment);border-radius:8px;padding:12px;gap:10px;transition:border-color .15s,background .15s}
 .product-row:hover{border-color:var(--rule);background:#FEFDFB}
 .product-row.has-qty{border-color:var(--moss);background:var(--moss-lt)}
-.product-info{flex:1;min-width:0}
-.product-name{font-size:14px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.product-meta{font-size:11px;color:var(--stone);margin-top:1px}
-.product-price{font-family:'EB Garamond',serif;font-size:16px;font-weight:500;color:var(--moss);white-space:nowrap;min-width:54px;text-align:right}
-.qty-ctrl{display:flex;align-items:center;gap:0;border:1.5px solid var(--rule);border-radius:5px;overflow:hidden;background:#fff}
-.qty-ctrl button{width:28px;height:28px;border:none;background:transparent;font-size:16px;font-weight:600;color:var(--moss);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s}
+.product-info{flex:1}
+.product-name{font-size:13.5px;font-weight:500;color:var(--ink);line-height:1.35;overflow-wrap:break-word}
+.product-meta{font-size:11px;color:var(--stone);margin-top:3px}
+.product-price{font-family:'EB Garamond',serif;font-size:16px;font-weight:500;color:var(--moss);white-space:nowrap}
+.qty-ctrl{display:flex;align-items:center;gap:0;border:1.5px solid var(--rule);border-radius:5px;overflow:hidden;background:#fff;width:100%}
+.qty-ctrl button{width:28px;height:28px;flex-shrink:0;border:none;background:transparent;font-size:16px;font-weight:600;color:var(--moss);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s}
 .qty-ctrl button:hover{background:var(--moss-lt)}
-.qty-ctrl input{width:32px;height:28px;border:none;border-left:1px solid var(--rule);border-right:1px solid var(--rule);text-align:center;font-size:13px;font-weight:600;color:var(--ink);background:transparent;-moz-appearance:textfield;font-family:'Hanken Grotesk',sans-serif}
+.qty-ctrl input{flex:1;min-width:0;height:28px;border:none;border-left:1px solid var(--rule);border-right:1px solid var(--rule);text-align:center;font-size:13px;font-weight:600;color:var(--ink);background:transparent;-moz-appearance:textfield;font-family:'Hanken Grotesk',sans-serif}
 .qty-ctrl input::-webkit-outer-spin-button,.qty-ctrl input::-webkit-inner-spin-button{-webkit-appearance:none}
 .qty-ctrl input:focus{outline:none;background:var(--moss-lt)}
 
@@ -119,9 +119,9 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
 .footer{text-align:center;font-size:11px;color:var(--stone);margin-top:32px;line-height:1.8;padding-top:20px;border-top:1px solid var(--rule)}
 
 
-.product-price-block{text-align:right;min-width:70px}
+.product-price-block{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
 .mrp-label{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--stone);font-family:'Hanken Grotesk',sans-serif;display:block;margin-bottom:1px}
-.product-subtotal{font-family:'EB Garamond',serif;font-size:13px;font-weight:600;color:var(--moss);white-space:nowrap;margin-top:2px}
+.product-subtotal{font-family:'EB Garamond',serif;font-size:12.5px;font-weight:600;color:var(--moss);white-space:nowrap}
 
 .reset-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px 24px;background:transparent;color:var(--stone);border:1.5px solid var(--rule);border-radius:8px;font-family:'Hanken Grotesk',sans-serif;font-size:14px;font-weight:500;cursor:pointer;margin-top:10px;transition:border-color .15s,color .15s}
 .reset-btn:hover{border-color:var(--red);color:var(--red)}
@@ -130,7 +130,6 @@ body{background:var(--cream);font-family:'Hanken Grotesk',sans-serif;color:var(-
   .brand{font-size:36px}
   .field-grid{grid-template-columns:1fr}
   .field.full{grid-column:1}
-  .product-name{font-size:13px}
 }
 </style>
 </head>
